@@ -14,6 +14,10 @@ from telegram.ext import (
 )
 import asyncio
 
+import threading
+
+import health
+
 from config import BOT_TOKEN, DEFAULT_PART_PRICE
 
 from payment import send_stk_push, reference
@@ -1005,11 +1009,21 @@ def main():
 
     print("🎬 RAJUL MOVIES BOT RUNNING...")
 
+    threading.Thread(
+        target=health.app.run,
+        kwargs={
+            "host": "0.0.0.0",
+            "port": int(os.environ.get("PORT", 10000))
+    },
+    daemon=True
+).start()
+
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
+
 
 
 
