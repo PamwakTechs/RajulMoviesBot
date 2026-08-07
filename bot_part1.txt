@@ -1,0 +1,200 @@
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
+
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
+
+from config import BOT_TOKEN, DEFAULT_PART_PRICE
+
+from payment import send_stk_push, reference
+
+from database import (
+    fetchone,
+    fetchall,
+    save_order,
+)
+
+from admin import (
+    admin_panel,
+    add_movie_start,
+    add_part_start,
+    movie_conversation,
+    part_conversation,
+)
+
+# ==========================
+# START
+# ==========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    keyboard = [
+        [InlineKeyboardButton("🎬 Action Movies", callback_data="cat:Action")],
+        [InlineKeyboardButton("❤️ Romance Movies", callback_data="cat:Romance")],
+        [InlineKeyboardButton("👻 Horror Movies", callback_data="cat:Horror")],
+        [InlineKeyboardButton("📺 Series", callback_data="cat:Series")],
+        [InlineKeyboardButton("🎧 DJ Smith", callback_data="cat:DJ Smith")],
+        [InlineKeyboardButton("🎧 DJ Afro", callback_data="cat:DJ Afro")],
+        [InlineKeyboardButton("🔥 Kenyan Leaks", callback_data="cat:Kenyan Leaks")],
+    ]
+    await update.message.reply_text(
+        "🎬 Welcome to RAJUL MOVIES\n\n"
+        "Choose a category below.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+# ==========================
+# CATEGORY LIST
+# ==========================
+
+async def show_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    category = query.data.split(":")[1]
+
+    movies = fetchall(
+        """
+        SELECT id, name
+        FROM movies
+        WHERE category=?
+        ORDER BY id DESC
+        """,
+        (category,),
+    )
+
+    if not movies:
+        await query.message.edit_text(
+            "❌ No movies found in this category."
+        )
+        return
+
+    keyboard = []
+
+    for movie in movies:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    movie[1],
+                    callback_data=f"movie:{movie[0]}"
+                )
+            ]
+        )
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "⬅ Back",
+                callback_data="home"
+            )
+        ]
+    )
+
+    await query.message.edit_text(
+        f"🎬 {category}\n\nSelect a movie:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+# ==========================
+# HOME BUTTON
+# ==========================
+
+async def go_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [
+        [InlineKeyboardButton("🎬 Action Movies", callback_data="cat:Action")],
+        [InlineKeyboardButton("❤️ Romance Movies", callback_data="cat:Romance")],
+        [InlineKeyboardButton("👻 Horror Movies", callback_data="cat:Horror")],
+        [InlineKeyboardButton("📺 Series", callback_data="cat:Series")],
+        [InlineKeyboardButton("🎧 DJ Smith", callback_data="cat:DJ Smith")],
+        [InlineKeyboardButton("🎧 DJ Afro", callback_data="cat:DJ Afro")],
+        [InlineKeyboardButton("🔥 Kenyan Leaks", callback_data="cat:Kenyan Leaks")],
+    ]
+
+    await query.message.edit_text(
+        "🎬 RAJUL MOVIES\n\nChoose a category:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+# ==========================
+# MOVIE PAGE
+# ==========================
+
+async def show_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    movie_id = int(query.data.split(":")[1])
+
+    movie = fetchone(
+        """
+        SELECT id, name, description, poster_file_id
+        FROM movies
+        WHERE id=?
+        """,
+        (movie_id,),
+    )
+
+    if not movie:
+        await query.message.reply_text("❌ Movie not found.")
+        return
+
+    total_parts = fetchone(
+        "SELECT COUNT(*) FROM parts WHERE movie_id=?",
+        (movie_id,),
+    )[0]
+
+    total_price = total_parts * DEFAULT_PART_PRICE
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🎥 Buy Parts",
+                callback_data=f"parts:{movie_id}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"📦 Buy All (KSh {total_price})",
+                callback_data=f"buyall:{movie_id}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "⬅ Back",
+                callback_data=f"cat:{fetchone('SELECT category FROM movies WHERE id=?',(movie_id,))[0]}"
+            )
+        ]
+    ]
+
+    await query.message.reply_photo(
+        photo=movie[3],
+        caption=(
+            f"🎬 {movie[1]}\n\n"
+            f"{movie[2]}\n\n"
+            f"📦 Parts: {total_parts}\n"
+            f"💰 Buy All: KSh {total_price}"
+        ),
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+# ==========================
+# SHOW PARTS
+# ==========================
+
+async def show_parts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()

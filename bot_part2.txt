@@ -1,0 +1,262 @@
+
+    movie_id = int(query.data.split(":")[1])
+
+    parts = fetchall(
+        """
+        SELECT id, part_name, price
+        FROM parts
+        WHERE movie_id=?
+        ORDER BY id
+        """,
+        (movie_id,),
+    )
+
+    if not parts:
+        await query.message.reply_text("❌ No parts found.")
+        return
+
+    keyboard = []
+
+    for part in parts:
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    f"{part[1]} - KSh {part[2]}",
+                    callback_data=f"buypart:{part[0]}"
+                )
+            ]
+        )
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(
+                "⬅ Back",
+                callback_data=f"movie:{movie_id}"
+            )
+        ]
+    )
+
+    await query.message.reply_text(
+        "🎥 Select the part you want to buy:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+# ==========================
+# BUY PART
+# ==========================
+
+async def buy_part(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    part_id = int(query.data.split(":")[1])
+
+    part = fetchone(
+        """
+        SELECT movie_id, part_name, price
+        FROM parts
+        WHERE id=?
+        """,
+        (part_id,),
+    )
+
+    if not part:
+        await query.message.reply_text("❌ Part not found.")
+        return
+
+    context.user_data["part_id"] = part_id
+    context.user_data["movie_id"] = part[0]
+    context.user_data["amount"] = part[2]
+    context.user_data["buy_all"] = False
+
+    await query.message.reply_text(
+        f"🎬 {part[1]}\n"
+        f"💰 Price: KSh {part[2]}\n\n"
+        "📱 Send your M-Pesa/Airtel number:"
+    )
+# ==========================
+# PROCESS PHONE PAYMENT
+# ==========================
+
+async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    phone = update.message.text.strip()
+
+    if not (phone.isdigit() and len(phone) >= 10):
+        await update.message.reply_text(
+            "❌ Send a valid phone number."
+        )
+        return
+
+    amount = context.user_data.get("amount")
+    part_id = context.user_data.get("part_id")
+
+    if not amount:
+        await update.message.reply_text(
+            "❌ Session expired. Choose a movie again."
+        )
+        return
+
+    ref = reference()
+
+    # Send STK Push
+    success, message, data = send_stk_push(
+        phone,
+        amount,
+        ref
+    )
+
+    if not success:
+        await update.message.reply_text(
+            f"❌ Payment failed:\n{message}"
+        )
+        return
+
+    save_order(
+        update.effective_user.id,
+        context.user_data.get("movie_id"),
+        part_id,
+        phone,
+        amount,
+        ref
+    )
+
+    await update.message.reply_text(
+        "📱 STK Push sent.\n\n"
+        "Complete payment on your phone."
+    )
+# ==========================
+# SEND PAID VIDEO
+# ==========================
+
+async def deliver_video(user_id, part_id, context):
+
+    part = fetchone(
+        """
+        SELECT video_file_id, part_name
+        FROM parts
+        WHERE id=?
+        """,
+        (part_id,),
+    )
+
+    if not part:
+        return
+
+    await context.bot.send_video(
+        chat_id=user_id,
+        video=part[0],
+        caption=f"✅ Your purchase:\n🎬 {part[1]}"
+    )
+
+
+# ==========================
+# CALLBACK ROUTER
+# ==========================
+
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    if data == "admin_add_movie":
+        await add_movie_start(update, context)
+        return
+
+    if data == "admin_add_part":
+        await add_part_start(update, context)
+        return
+
+    if data == "admin_movies":
+        await query.message.reply_text("📋 Movie list coming...")
+        return
+
+    if data == "home":
+        await go_home(update, context)
+        return
+
+    if data.startswith("cat:"):
+        await show_category(update, context)
+        return
+
+    if data.startswith("movie:"):
+        await show_movie(update, context)
+        return
+
+    if data.startswith("parts:"):
+        await show_parts(update, context)
+        return
+
+    if data.startswith("buypart:"):
+        await buy_part(update, context)
+        return
+
+    if data.startswith("buyall:"):
+        movie_id = int(data.split(":")[1])
+
+        parts = fetchall(
+            "SELECT id FROM parts WHERE movie_id=?",
+            (movie_id,)
+        )
+
+        total = len(parts) * DEFAULT_PART_PRICE
+
+        context.user_data["movie_id"] = movie_id
+        context.user_data["amount"] = total
+        context.user_data["part_id"] = None
+
+        await query.message.reply_text(
+            f"📦 Buy All Parts\n"
+            f"💰 Total: KSh {total}\n\n"
+            "📱 Send your M-Pesa/Airtel number:"
+        )
+        return
+# ==========================
+# MAIN
+# ==========================
+
+def main():
+
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    # User commands
+    app.add_handler(
+        CommandHandler("start", start)
+    )
+
+    # Admin
+    app.add_handler(
+        CommandHandler("admin", admin_panel)
+    )
+
+    # Movie / Part upload
+    app.add_handler(movie_conversation)
+    app.add_handler(part_conversation)
+
+    # Buttons
+    app.add_handler(
+        CallbackQueryHandler(buttons)
+    )
+
+    # Phone input
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_phone,
+            block=False
+        ),
+        group=1
+    )
+
+    print("🎬 RAJUL MOVIES BOT RUNNING...")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
