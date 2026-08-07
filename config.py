@@ -2,7 +2,9 @@
 # TELEGRAM
 # ==========================
 
-BOT_TOKEN = "8948527326:AAFUurS1ERgxH9Ff-Z0Ij6l7MhLiDzIFmq0"
+import os
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 BOT_USERNAME = "@RajpaymentBot"
 
