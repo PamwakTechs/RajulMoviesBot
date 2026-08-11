@@ -38,7 +38,7 @@ PAYHERO_ACCOUNT_ID = "11004"
 
 PAYHERO_CHANNEL_ID = "11224"
 
-CALLBACK_URL = "https://feat-cosmetic-furniture-thoughts.trycloudflare.com/payhero/callback"
+CALLBACK_URL = "https://rajulmoviesbot-1.onrender.com/payhero/callback"
 
 
 # ==========================
