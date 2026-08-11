@@ -409,8 +409,43 @@ async def buy_part(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ==========================
+# PROCESS WALLET TOP-UP AMOUNT
+# ==========================
+
+async def handle_wallet_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not context.user_data.get("wallet_topup"):
+        return
+
+    text = update.message.text.strip()
+
+    if not text.isdigit():
+        await update.message.reply_text(
+            "❌ Please enter a valid amount in KSh."
+        )
+        return
+
+    amount = int(text)
+
+    if amount < 10:
+        await update.message.reply_text(
+            "❌ Minimum wallet top-up is KSh 10."
+        )
+        return
+
+    context.user_data["wallet_amount"] = amount
+    context.user_data["wallet_topup_payment"] = True
+    context.user_data["wallet_topup"] = False
+
+    await update.message.reply_text(
+        f"💰 Wallet top-up: KSh {amount}\n\n"
+        "📱 Now send your M-PESA/Airtel phone number:"
+    )
+
+# ==========================
 # PROCESS PHONE PAYMENT
 # ==========================
+
 
 async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -842,7 +877,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("mpesa:"):
 
-        ...
+        part_id = int(data.split(":")[1])
+
+        part = fetchone(
+            "SELECT movie_id, part_name, price FROM parts WHERE id=?",
+            (part_id,)
+        )
 
         if not part:
             await query.message.reply_text(
@@ -987,6 +1027,15 @@ def main():
     )
 
     # Phone input
+
+    app.add_handler(
+        MessageHandler(
+            filters.Regex(r"^\d+$"),
+            handle_wallet_amount,
+            block=False
+        ),
+        group=0
+    )
 
     app.add_handler(
         MessageHandler(
