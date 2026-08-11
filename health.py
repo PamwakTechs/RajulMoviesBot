@@ -14,9 +14,10 @@ def home():
 @app.route("/payhero/callback", methods=["POST"])
 def payhero_callback():
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(silent=True) or {}
 
-    print("PAYHERO CALLBACK:", data)
+    print("========== PAYHERO CALLBACK ==========", flush=True)
+    print("CALLBACK DATA:", data, flush=True)
 
     reference = (
         data.get("external_reference")
@@ -24,9 +25,16 @@ def payhero_callback():
         or ""
     )
 
-    status = str(data.get("status") or "").upper()
+    status = str(
+        data.get("status")
+        or data.get("payment_status")
+        or ""
+    ).upper()
 
-    if status in ("SUCCESS", "TRUE", "PAID"):
+    print("REFERENCE:", reference, flush=True)
+    print("STATUS:", status, flush=True)
+
+    if status in ("SUCCESS", "TRUE", "PAID", "COMPLETED"):
 
         execute(
             """
@@ -46,7 +54,9 @@ def payhero_callback():
             (reference,)
         )
 
-    return jsonify({"success": True})
+        print("PAYMENT MARKED PAID:", reference, flush=True)
+
+    return jsonify({"success": True}), 200
 
 
 if __name__ == "__main__":
